@@ -61,50 +61,73 @@ class CadVariablesWidget extends HTMLElement {
   }
 
   async refresh() {
-    try {
-      const taskMap = await Desktop.actions.getTaskMap(); // returns current tasks [1](https://developer.webex.com/blog/leveraging-the-webex-contact-center-agent-desktop-sdk-in-your-custom-widgets)
+  try {
+    const taskMap = await Desktop.actions.getTaskMap();
+	
+    const tasks = taskMap instanceof Map ? Array.from(taskMap.values()) : Object.values(taskMap || {});
+	
+	console.group('[cad-widget] task map snapshot');
+	console.log('raw taskMap:', taskMap);
+	console.log('values:', Array.isArray(tasks) ? tasks : []);
+	console.groupEnd();
 
-      // Normalize Map/Object
-      const entries = taskMap instanceof Map ? Array.from(taskMap.values()) : Object.values(taskMap || {});
-
-      // Pick an active voice call if present
-      const voiceTask = entries.find(t =>
-        (t?.mediaType === 'telephony' || t?.channelType === 'telephony' || t?.mediaType === 'voice') &&
-        !['ended','wrapup-ended','disconnected'].includes((t?.state || '').toLowerCase())
-      ) || null;
-
-      if (!voiceTask) {
-        this.renderCad({});
-        this.$meta().textContent = 'Waiting for an active voice task…';
-        return;
-      }
-
-      // CAD is present in the task payload; different SDK revs or payload shapes
-      // may nest it differently. We check common locations defensively:
-      const cad = voiceTask?.cadVariables
-        || voiceTask?.cad
-        || voiceTask?.variables
-        || voiceTask?.attributes?.cad
-        || {};
-
-      // Extract your four globals
-      const data = {
-        PVState:        cad.PVState ?? cad['pvstate'] ?? '',
-        PVCarrier:      cad.PVCarrier ?? cad['pvcarrier'] ?? '',
-        PVCallType:     cad.PVCallType ?? cad['pvcalltype'] ?? '',
-        PVClaimNumber:  cad.PVClaimNumber ?? cad['pvclaimnumber'] ?? '',
-      };
-
-      this.renderCad(data);
-
-      const id = voiceTask?.interactionId || voiceTask?.id || '(unknown)';
-      this.$meta().textContent = `Interaction: ${id} · Last update: ${new Date().toLocaleTimeString()}`;
-
-    } catch (err) {
-      // Non-fatal: show we’re alive even if SDK not ready yet
-      this.$meta().textContent = `Waiting for Desktop SDK… (${err?.message || err})`;
+    if (!tasks.length) {
+      this.renderCad({});
+      this.$meta().textContent = 'Waiting for an active voice task…';
+      return;
     }
+
+    // Helpers to normalize shapes seen in the SDK payloads
+    const mediaTypeOf = (t) => {
+      const fromTop = t?.mediaType;
+      const fromInteraction = t?.interaction?.mediaType;
+      const fromMediaObj = t?.media ? Object.values(t.media)[0]?.mediaType : undefined;
+      return (fromTop || fromInteraction || fromMediaObj || '').toLowerCase();
+    };
+    const stateOf = (t) => (t?.state || t?.interaction?.state || '').toLowerCase();
+    const isTelephony = (t) => mediaTypeOf(t) === 'telephony';
+    const isActive = (t) => !['ended', 'wrapup-ended', 'disconnected'].includes(stateOf(t));
+
+    // Prefer an active telephony task; otherwise any telephony task
+    let voiceTask = tasks.find((t) => isTelephony(t) && isActive(t))
+                  || tasks.find((t) => isTelephony(t));
+
+    if (!voiceTask) {
+      this.renderCad({});
+      this.$meta().textContent = 'Waiting for an active voice task…';
+      return;
+    }
+
+    // Pull CAD from the actual shape; flatten `.value` if present
+    const rawCad =
+      voiceTask?.cadVariables ||
+      voiceTask?.interaction?.callAssociatedData ||
+      voiceTask?.callAssociatedData ||
+      {};
+
+    const getVal = (v) => (v && typeof v === 'object' && 'value' in v ? v.value : v) ?? '';
+
+    const data = {
+      PVState:       getVal(rawCad.PVState),
+      PVCarrier:     getVal(rawCad.PVCarrier),
+      PVCallType:    getVal(rawCad.PVCallType),
+      PVClaimNumber: getVal(rawCad.PVClaimNumber),
+    };
+
+    this.renderCad(data);
+
+    const id =
+      voiceTask?.interactionId ||
+      voiceTask?.id ||
+      Object.keys(voiceTask?.media || {})[0] ||
+      '(unknown)';
+
+    this.$meta().textContent = `Interaction: ${id} · Last update: ${new Date().toLocaleTimeString()}`;
+
+  } catch (err) {
+    this.$meta().textContent = `Waiting for Desktop SDK… (${err?.message || err})`;
   }
+}
 
   renderCad({ PVState = '', PVCarrier = '', PVCallType = '', PVClaimNumber = '' }) {
     this.$('pvstate').textContent = PVState || '—';
