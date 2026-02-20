@@ -222,10 +222,10 @@ class CadVariablesWidget extends HTMLElement {
 
       // Build payload only with provided values
       const payload = {};
-      const state    = this.$state.value.trim();
-      const carrier  = this.$carrier.value.trim();
-      const calltype = this.$calltype.value.trim();
-      const claim    = this.$claim.value.trim();
+      let state    = this.$state.value.trim();
+      let carrier  = this.$carrier.value.trim();
+      let calltype = this.$calltype.value.trim();
+      let claim    = this.$claim.value.trim();
 
       if (!claim) {
         this.setStatus('Claim Number is required.', 'error');
@@ -238,9 +238,9 @@ class CadVariablesWidget extends HTMLElement {
       if (calltype) payload['PGR_CallType']     = calltype;
       payload['PGR_ClaimNumber']                = claim; // required
 	  
-	  if (!state)    state = " ";
-      if (!carrier)  carrier = " ";
-      if (!calltype)  calltype = " ";
+	  if (!state)    state = ' ';
+      if (!carrier)  carrier = ' ';
+      if (!calltype)  calltype = ' ';
 
 	  
 
@@ -259,14 +259,6 @@ class CadVariablesWidget extends HTMLElement {
 	  
 	  console.log('CadVarsUpdated value: ' + JSON.stringify(cadVarsUpdated));
 	  
-      //await Desktop.dialer.updateCadVariables({
-      //  interactionId: interactionId,
-      //  data: { 
-	//	  attributes: payload }
-    //  }); 
-	  
-	  // ref: WebexSamples desktop-js-sdk-sample (sa-ds-sdk.js) [1](https://dev.to/code_2/building-and-deploying-a-custom-site-using-github-actions-and-github-pages-3fjf)
-
       this.setStatus(`Saved CAD for interaction ${interactionId} at ${new Date().toLocaleTimeString()}.`, 'success');
 
     } catch (err) {
