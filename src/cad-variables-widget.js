@@ -1,7 +1,7 @@
 import { Desktop } from '@wxcc-desktop/sdk';
 
 // Initialize the Desktop SDK once
-Desktop.config.init(); // per Cisco’s sample/blog [1](https://developer.webex.com/blog/leveraging-the-webex-contact-center-agent-desktop-sdk-in-your-custom-widgets)
+Desktop.config.init();
 
 const TEMPLATE = document.createElement('template');
 TEMPLATE.innerHTML = `
@@ -21,12 +21,12 @@ TEMPLATE.innerHTML = `
     .muted { color: #888; font-size: 12px; margin-top: 8px; }
   </style>
   <div class="card">
-    <h4>CAD (PV*)</h4>
+    <h4>Claim Values</h4>
     <dl>
-      <dt>PVState</dt><dd id="pvstate">—</dd>
-      <dt>PVCarrier</dt><dd id="pvcarrier">—</dd>
-      <dt>PVCallType</dt><dd id="pvcalltype">—</dd>
-      <dt>PVClaimNumber</dt><dd id="pvclaimnumber">—</dd>
+      <dt>State</dt><dd id="state">—</dd>
+      <dt>Carrier</dt><dd id="carrier">—</dd>
+      <dt>CallType</dt><dd id="calltype">—</dd>
+      <dt>ClaimNumber</dt><dd id="claimnumber">—</dd>
     </dl>
     <div class="muted" id="meta">Waiting for an active voice task…</div>
   </div>
@@ -40,17 +40,14 @@ class CadVariablesWidget extends HTMLElement {
   }
 
   connectedCallback() {
-    // Start a lightweight poll; reliable across all event timing cases.
-    // (You can swap this for precise Desktop.agentContact events later.)
+    // Poll as a safety net for event timing
     this._interval = setInterval(() => this.refresh(), 2000);
 
-    // Optional: also react promptly when any agent-contact events occur
+    // Also react to agent contact events quickly when available
     try {
       Desktop.agentContact?.addEventListener?.('*', () => this.refresh());
-      // Depending on SDK version, you can register specific events as needed
-      // e.g., 'hold', 'unhold', 'wrapup-started', 'wrapup-ended', etc. [1](https://developer.webex.com/blog/leveraging-the-webex-contact-center-agent-desktop-sdk-in-your-custom-widgets)
     } catch (e) {
-      // Swallow if addEventListener signature differs
+      // ignore differences in SDK versions
     }
 
     this.refresh(); // initial
@@ -61,83 +58,84 @@ class CadVariablesWidget extends HTMLElement {
   }
 
   async refresh() {
-  try {
-    const taskMap = await Desktop.actions.getTaskMap();
-	
-    const tasks = taskMap instanceof Map ? Array.from(taskMap.values()) : Object.values(taskMap || {});
-	
-	console.group('[cad-widget] task map snapshot');
-	console.log('raw taskMap:', taskMap);
-	console.log('values:', Array.isArray(tasks) ? tasks : []);
-	console.groupEnd();
+    try {
+      const taskMap = await Desktop.actions.getTaskMap();
+      const tasks = taskMap instanceof Map ? Array.from(taskMap.values()) : Object.values(taskMap || {});
 
-    if (!tasks.length) {
-      this.renderCad({});
-      this.$meta().textContent = 'Waiting for an active voice task…';
-      return;
+      // Optional debug snapshot (remove if noisy)
+      console.group('[cad-widget] task map snapshot');
+      console.log('raw taskMap:', taskMap);
+      console.log('values:', Array.isArray(tasks) ? tasks : []);
+      console.groupEnd();
+
+      if (!tasks.length) {
+        this.renderCad({});
+        this.$meta().textContent = 'Waiting for an active voice task…';
+        return;
+      }
+
+      // Normalize common shapes for mediaType/state across SDK revisions
+      const mediaTypeOf = (t) => {
+        const fromTop = t?.mediaType;
+        const fromInteraction = t?.interaction?.mediaType;
+        const fromMediaObj = t?.media ? Object.values(t.media)[0]?.mediaType : undefined;
+        return (fromTop || fromInteraction || fromMediaObj || '').toLowerCase();
+      };
+      const stateOf = (t) => (t?.state || t?.interaction?.state || '').toLowerCase();
+      const isTelephony = (t) => mediaTypeOf(t) === 'telephony';
+      const isActive = (t) => !['ended', 'wrapup-ended', 'disconnected'].includes(stateOf(t));
+
+      // Prefer an active telephony task; otherwise any telephony task
+      let voiceTask = tasks.find((t) => isTelephony(t) && isActive(t))
+                    || tasks.find((t) => isTelephony(t));
+
+      if (!voiceTask) {
+        this.renderCad({});
+        this.$meta().textContent = 'Waiting for an active voice task…';
+        return;
+      }
+
+      // Pull CAD from the current valid Voice Task
+      const rawCad =
+        voiceTask?.cadVariables ||
+        voiceTask?.interaction?.callAssociatedData ||
+        voiceTask?.callAssociatedData ||
+        {};
+
+      const getVal = (v) => (v && typeof v === 'object' && 'value' in v ? v.value : v) ?? '';
+
+      // Use the new PGR_* variables
+      const data = {
+        State:       getVal(rawCad['PGR_State']),
+        Carrier:     getVal(rawCad['PGR_Carrier']),
+        CallType:    getVal(rawCad['PGR_CallType']),    
+        ClaimNumber: getVal(rawCad['PGR_ClaimNumber']),
+      };
+
+      this.renderCad(data);
+
+      const id =
+        voiceTask?.interactionId ||
+        voiceTask?.id ||
+        Object.keys(voiceTask?.media || {})[0] ||
+        '(unknown)';
+
+      this.$meta().textContent = `Interaction: ${id} · Last update: ${new Date().toLocaleTimeString()}`;
+
+    } catch (err) {
+      this.$meta().textContent = `Waiting for Desktop SDK… (${err?.message || err})`;
     }
-
-    // Helpers to normalize shapes seen in the SDK payloads
-    const mediaTypeOf = (t) => {
-      const fromTop = t?.mediaType;
-      const fromInteraction = t?.interaction?.mediaType;
-      const fromMediaObj = t?.media ? Object.values(t.media)[0]?.mediaType : undefined;
-      return (fromTop || fromInteraction || fromMediaObj || '').toLowerCase();
-    };
-    const stateOf = (t) => (t?.state || t?.interaction?.state || '').toLowerCase();
-    const isTelephony = (t) => mediaTypeOf(t) === 'telephony';
-    const isActive = (t) => !['ended', 'wrapup-ended', 'disconnected'].includes(stateOf(t));
-
-    // Prefer an active telephony task; otherwise any telephony task
-    let voiceTask = tasks.find((t) => isTelephony(t) && isActive(t))
-                  || tasks.find((t) => isTelephony(t));
-
-    if (!voiceTask) {
-      this.renderCad({});
-      this.$meta().textContent = 'Waiting for an active voice task…';
-      return;
-    }
-
-    // Pull CAD from the actual shape; flatten `.value` if present
-    const rawCad =
-      voiceTask?.cadVariables ||
-      voiceTask?.interaction?.callAssociatedData ||
-      voiceTask?.callAssociatedData ||
-      {};
-
-    const getVal = (v) => (v && typeof v === 'object' && 'value' in v ? v.value : v) ?? '';
-
-    const data = {
-      PVState:       getVal(rawCad.PVState),
-      PVCarrier:     getVal(rawCad.PVCarrier),
-      PVCallType:    getVal(rawCad.PVCallType),
-      PVClaimNumber: getVal(rawCad.PVClaimNumber),
-    };
-
-    this.renderCad(data);
-
-    const id =
-      voiceTask?.interactionId ||
-      voiceTask?.id ||
-      Object.keys(voiceTask?.media || {})[0] ||
-      '(unknown)';
-
-    this.$meta().textContent = `Interaction: ${id} · Last update: ${new Date().toLocaleTimeString()}`;
-
-  } catch (err) {
-    this.$meta().textContent = `Waiting for Desktop SDK… (${err?.message || err})`;
-  }
-}
-
-  renderCad({ PVState = '', PVCarrier = '', PVCallType = '', PVClaimNumber = '' }) {
-    this.$('pvstate').textContent = PVState || '—';
-    this.$('pvcarrier').textContent = PVCarrier || '—';
-    this.$('pvcalltype').textContent = PVCallType || '—';
-    this.$('pvclaimnumber').textContent = PVClaimNumber || '—';
   }
 
-  $(id)     { return this.shadowRoot.getElementById(id); }
-  $meta()   { return this.shadowRoot.getElementById('meta'); }
+  renderCad({ State = '', Carrier = '', CallType = '', ClaimNumber = '' }) {
+    this.$('state').textContent       = State || '—';
+    this.$('carrier').textContent     = Carrier || '—';
+    this.$('calltype').textContent    = CallType || '—';
+    this.$('claimnumber').textContent = ClaimNumber || '—';
+  }
+
+  $(id)   { return this.shadowRoot.getElementById(id); }
+  $meta() { return this.shadowRoot.getElementById('meta'); }
 }
 
 customElements.define('cad-variables-widget', CadVariablesWidget);
