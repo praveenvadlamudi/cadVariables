@@ -238,12 +238,23 @@ class CadVariablesWidget extends HTMLElement {
       if (calltype) payload['PGR_CallType']     = calltype;
       payload['PGR_ClaimNumber']                = claim; // required
 
-      // EXACT signature used in the official Webex sample widget:
       // Desktop.dialer.updateCadVariables({ interactionId, data: { attributes: { ... } } })
-      await Desktop.dialer.updateCadVariables({
-        interactionId,
-        data: { attributes: payload }
-      }); 
+	  const cadVarsUpdated = await Desktop.dialer.updateCadVariables({
+        interactionId: interactionId,
+        data: {
+          attributes: {
+            PGR_ClaimNumber: '12341234',
+          },
+        },
+      });
+	  
+	  console.log('CadVarsUpdated value: ' + JSON.stringify(cadVarsUpdated));
+	  
+      //await Desktop.dialer.updateCadVariables({
+      //  interactionId: interactionId,
+      //  data: { 
+	//	  attributes: payload }
+    //  }); 
 	  
 	  // ref: WebexSamples desktop-js-sdk-sample (sa-ds-sdk.js) [1](https://dev.to/code_2/building-and-deploying-a-custom-site-using-github-actions-and-github-pages-3fjf)
 
