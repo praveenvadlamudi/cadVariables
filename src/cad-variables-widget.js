@@ -238,6 +238,10 @@ class CadVariablesWidget extends HTMLElement {
       if (calltype) payload['PGR_CallType']     = calltype;
       payload['PGR_ClaimNumber']                = claim; // required
 	  
+	  if (!state)    state = " ";
+      if (!carrier)  carrier = " ";
+      if (!calltype)  calltype = " ";
+
 	  
 
       // Desktop.dialer.updateCadVariables({ interactionId, data: { attributes: { ... } } })
@@ -246,6 +250,9 @@ class CadVariablesWidget extends HTMLElement {
         data: {
           attributes: {
             PGR_ClaimNumber: claim,
+			PGR_CallType: calltype,
+			PGR_Carrier: carrier,
+			PGR_State: state,
           },
         },
       });
