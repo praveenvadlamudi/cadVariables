@@ -237,13 +237,15 @@ class CadVariablesWidget extends HTMLElement {
       if (carrier)  payload['PGR_Carrier']      = carrier;
       if (calltype) payload['PGR_CallType']     = calltype;
       payload['PGR_ClaimNumber']                = claim; // required
+	  
+	  
 
       // Desktop.dialer.updateCadVariables({ interactionId, data: { attributes: { ... } } })
 	  const cadVarsUpdated = await Desktop.dialer.updateCadVariables({
         interactionId: interactionId,
         data: {
           attributes: {
-            PGR_ClaimNumber: '12341234',
+            PGR_ClaimNumber: claim,
           },
         },
       });
