@@ -37,13 +37,13 @@ TEMPLATE.innerHTML = `
     <form id="cadForm">
       <div class="row">
         <div>
-          <label for="state">State (PGR_State)</label>
+          <label for="state">Insurance State</label>
           <select id="state">
             <option value="">— Select —</option>
           </select>
         </div>
         <div>
-          <label for="calltype">Call Type (PGR_CallType)</label>
+          <label for="calltype">Call Type</label>
           <select id="calltype">
             <option value="">— Select —</option>
           </select>
@@ -51,15 +51,15 @@ TEMPLATE.innerHTML = `
       </div>
 
       <div>
-        <label for="carrier">Carrier (PGR_Carrier)</label>
+        <label for="carrier">Insurance Name</label>
         <select id="carrier">
           <option value="">— Select —</option>
         </select>
       </div>
 
       <div>
-        <label for="claimnumber">Claim Number (PGR_ClaimNumber) <span class="muted">(required)</span></label>
-        <input type="text" id="claimnumber" placeholder="Enter claim number…" />
+        <label for="claimnumber">Afni Claim Number <span class="muted">(required)</span></label>
+        <input type="text" id="claimnumber" placeholder="Enter Afni claim number…" />
       </div>
 
       <div class="actions">
@@ -212,7 +212,7 @@ class CadVariablesWidget extends HTMLElement {
   }
 
   /**
-   * Prefill Claim Number from CAD (PGR_ClaimNumber) if available.
+   * Prefill Claim Number from PGR_ClaimNumber Global if available.
    * - Reads CAD from task.cadVariables OR interaction.callAssociatedData OR callAssociatedData
    * - Supports both plain string and { value: ... } forms
    * - Runs only once (won’t overwrite agent’s typing)
