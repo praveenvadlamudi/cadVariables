@@ -63,7 +63,8 @@ TEMPLATE.innerHTML = `
       </div>
 
       <div class="actions">
-        <button id="submitBtn" type="submit" disabled>Submit</button>
+        <!-- IMPORTANT: type="button" to avoid form submit bubbling -->
+        <button id="submitBtn" type="button" disabled>Submit</button>
       </div>
     </form>
 
@@ -94,8 +95,11 @@ class CadVariablesWidget extends HTMLElement {
       this.$submit.disabled = this.$claim.value.trim().length === 0;
     });
 
-    // Submit handler
-    this.$form.addEventListener('submit', (e) => this.handleSubmit(e));
+    // IMPORTANT: Use a click handler on the button; do NOT listen for form submit
+    this.$submit.addEventListener('click', (e) => this.handleSubmit(e));
+
+    // Prefill guard (avoid overwriting agent keystrokes repeatedly)
+    this._prefilledOnce = false;
 
     // Poll status (interaction availability)
     this._interval = null;
@@ -104,10 +108,14 @@ class CadVariablesWidget extends HTMLElement {
   connectedCallback() {
     this._interval = setInterval(() => this.refreshMeta(), 2000);
     this.refreshMeta(); // initial
+    this.prefillFromCad(); // try prefill right away
 
     // Optional: react to agent-contact events quickly
     try {
-      Desktop.agentContact?.addEventListener?.('*', () => this.refreshMeta());
+      Desktop.agentContact?.addEventListener?.('*', () => {
+        this.refreshMeta();
+        this.prefillFromCad();
+      });
     } catch {}
   }
 
@@ -196,13 +204,51 @@ class CadVariablesWidget extends HTMLElement {
         return;
       }
       this.$meta().textContent = `Interaction: ${entry.id}`;
+      // Also attempt prefill if available
+      this.prefillFromCad();
     } catch (err) {
       this.$meta().textContent = `Waiting for Desktop SDK… (${err?.message || err})`;
     }
   }
 
+  /**
+   * Prefill Claim Number from CAD (PGR_ClaimNumber) if available.
+   * - Reads CAD from task.cadVariables OR interaction.callAssociatedData OR callAssociatedData
+   * - Supports both plain string and { value: ... } forms
+   * - Runs only once (won’t overwrite agent’s typing)
+   */
+  async prefillFromCad() {
+    try {
+      if (this._prefilledOnce) return;
+
+      const entry = await this.getVoiceTaskEntry();
+      if (!entry) return;
+
+      const t = entry.task;
+      const rawCad =
+        t?.cadVariables ||
+        t?.interaction?.callAssociatedData ||
+        t?.callAssociatedData ||
+        {};
+
+      const v = rawCad?.PGR_ClaimNumber;
+      const claim = (v && typeof v === 'object' && 'value' in v) ? v.value : v;
+
+      if (claim && !this.$claim.value) {
+        this.$claim.value = String(claim);
+        this.$submit.disabled = this.$claim.value.trim().length === 0;
+        this._prefilledOnce = true;
+      }
+    } catch {
+      this.setStatus(`Failed to pre populate: ${err?.message || err}`, 'error');
+    }
+  }
+
   async handleSubmit(e) {
-    e.preventDefault();
+    // submit on button click
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
+
     this.$submit.disabled = true;
 
     try {
@@ -237,34 +283,32 @@ class CadVariablesWidget extends HTMLElement {
       if (carrier)  payload['PGR_Carrier']      = carrier;
       if (calltype) payload['PGR_CallType']     = calltype;
       payload['PGR_ClaimNumber']                = claim; // required
-	  
-	  if (!state)    state = ' ';
-      if (!carrier)  carrier = ' ';
-      if (!calltype)  calltype = ' ';
 
-	  
+      // populate empty values if not selected any drop down value
+      if (!state)    state = ' ';
+      if (!carrier)  carrier = ' ';
+      if (!calltype) calltype = ' ';
 
       // Desktop.dialer.updateCadVariables({ interactionId, data: { attributes: { ... } } })
-	  const cadVarsUpdated = await Desktop.dialer.updateCadVariables({
-        interactionId: interactionId,
+      const cadVarsUpdated = await Desktop.dialer.updateCadVariables({
+        interactionId,
         data: {
           attributes: {
             PGR_ClaimNumber: claim,
-			PGR_CallType: calltype,
-			PGR_Carrier: carrier,
-			PGR_State: state,
+            PGR_CallType: calltype,
+            PGR_Carrier: carrier,
+            PGR_State: state,
           },
         },
       });
-	  
-	  console.log('CadVarsUpdated value: ' + JSON.stringify(cadVarsUpdated));
-	  
+
+      console.log('CadVarsUpdated value:', cadVarsUpdated);
       this.setStatus(`Saved CAD for interaction ${interactionId} at ${new Date().toLocaleTimeString()}.`, 'success');
 
     } catch (err) {
       this.setStatus(`Failed to save CAD: ${err?.message || err}`, 'error');
     } finally {
-      // Re-enable submit if claim number still present (so agent can adjust)
+      // Re-enable submit if claim number still present
       this.$submit.disabled = this.$claim.value.trim().length === 0;
     }
   }
@@ -301,7 +345,6 @@ const CALL_TYPES = [
   "Follow-Up (Liability Status)"
 ];
 
-// … keep your full CARRIERS array here (unchanged)
 const CARRIERS = [
   "1st Auto & Casualty",
   "1st Chicago Insurance",
